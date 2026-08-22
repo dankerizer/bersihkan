@@ -46,10 +46,6 @@ Atau one-liner:
 brew install dankerizer/bersihkan/bersihkan
 ```
 
-> Setelah di-approve di [homebrew-core](https://github.com/Homebrew/homebrew-core/pull/300131), cukup:
-> ```bash
-> brew install bersihkan
-> ```
 
 Verifikasi:
 
