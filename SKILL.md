@@ -1,6 +1,6 @@
 ---
 name: bersihkan
-description: "Hapus node_modules, .next, dist, build, dan cache framework (Next.js, React, Vite, Nuxt, Laravel, Python) secara rekursif. Gunakan saat user ingin membersihkan project, menghemat disk, atau sebelum reinstall dependencies."
+description: "Hapus node_modules, .next, dist, build, dan cache framework (Next.js, React, Vite, Nuxt, Laravel, Go, Python) secara rekursif. Gunakan saat user ingin membersihkan project, menghemat disk, atau sebelum reinstall dependencies."
 ---
 
 # bersihkan 🧹
@@ -11,7 +11,7 @@ Command global untuk membersihkan artefak build dan cache framework secara **rek
 
 Aktifkan skill ini ketika user:
 - Meminta membersihkan `node_modules`, `.next`, `dist`, `build`, atau cache project
-- Mengeluh disk penuh karena project JS/PHP/Python
+- Mengeluh disk penuh karena project JS/PHP/Go/Python
 - Ingin install ulang dependencies (`npm install`, `composer install`) dari kondisi bersih
 - Menyebut kata kunci: `bersihkan`, `clean`, `hapus node_modules`, `bersihkan cache`, `clean project`
 
@@ -47,6 +47,7 @@ sudo curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/be
 |----------|--------|
 | **JS/Node/React/Next/Nuxt/Vite/Astro** | `node_modules`, `.next`, `.nuxt`, `.output`, `.vercel`, `.turbo`, `out`, `dist`, `build`, `.parcel-cache`, `.vite`, `coverage`, `.nyc_output`, `.cache` |
 | **Laravel/PHP** | `bootstrap/cache/*.php`, `storage/framework/views/*`, `storage/framework/cache/data/*`, `storage/framework/sessions/*`, `storage/logs/*.log` (+ `vendor/` jika `--vendor`) |
+| **Go** | `bin/`, `vendor/` (jika `--vendor`), `*.out`, `*.test` |
 | **Python** | `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache` |
 | **Umum** | `.DS_Store` |
 

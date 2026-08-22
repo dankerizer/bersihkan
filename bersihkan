@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
-# v2.3.2 - Tampilkan total ukuran setelah hapus
+# v2.4 - Support Go (bin, vendor, *.out, *.test)
 # Usage: bersihkan [PATH] [OPTIONS]
 
 set -e
@@ -50,6 +50,9 @@ Yang dihapus (rekursif, semua ditemukan akan dihapus):
     bootstrap/cache/*.php, storage/framework/views/*,
     storage/framework/cache/*, storage/framework/sessions/*,
     storage/logs/*.log   (+ vendor/ jika --vendor)
+
+  Go:
+    bin/, vendor/ (jika --vendor), *.out, *.test, coverage.out
 
   Python: __pycache__, .pytest_cache, .mypy_cache, .ruff_cache
   Umum: .DS_Store
@@ -199,6 +202,28 @@ if [[ -d "$TARGET/bootstrap" ]] || find "$TARGET" -maxdepth 4 -name "artisan" -t
   for d in "storage/framework/cache/data" "storage/framework/sessions"; do
     find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$d/*" ! -name ".gitignore" ! -name ".gitkeep" -print 2>/dev/null | head -n 300 >> "$FOUND_FILE" || true
   done
+fi
+
+# Go artefacts (hanya jika ada go.mod)
+if find "$TARGET" -maxdepth 4 -name "go.mod" -type f -print -quit 2>/dev/null | grep -q .; then
+  # bin/ - hanya yang berada di bawah project Go (yang punya go.mod di ancestor)
+  while IFS= read -r gomod; do
+    godir=$(dirname "$gomod")
+    # bin di root Go project
+    if [[ -d "$godir/bin" ]]; then
+      echo "$godir/bin" >> "$FOUND_FILE"
+    fi
+    # bin nested max 2 level (mis: cmd/bin)
+    find "$godir" -maxdepth 2 -type d -name "bin" -prune -print 2>/dev/null | while IFS= read -r b; do
+      # hindari duplicate root bin
+      if [[ "$b" != "$godir/bin" ]]; then
+        echo "$b" >> "$FOUND_FILE"
+      fi
+    done
+  done < <(find "$TARGET" -name "go.mod" -type f 2>/dev/null | head -n 20)
+  # coverage & test artefacts: *.out, *.test (max 200 file biar tidak terlalu banyak)
+  find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -name "*.out" -print 2>/dev/null | head -n 200 >> "$FOUND_FILE" || true
+  find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -name "*.test" -print 2>/dev/null | head -n 200 >> "$FOUND_FILE" || true
 fi
 
 stop_spinner

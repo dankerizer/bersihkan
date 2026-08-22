@@ -2,7 +2,7 @@
 
 Hapus `node_modules`, `.next`, `dist`, `build`, cache Laravel, dan artefak framework lainnya secara **rekursif** — bisa dipanggil dari mana pun.
 
-> Support: **Next.js / React / Nuxt / Vite / Astro / Laravel / Python** dan umum. Aman, ada `--dry-run` + live spinner.
+> Support: **Next.js / React / Nuxt / Vite / Astro / Laravel / Go / Python** dan umum. Aman, ada `--dry-run` + live spinner.
 
 ![disk full](disk-full.png)
 
@@ -22,6 +22,7 @@ Hapus `node_modules`, `.next`, `dist`, `build`, cache Laravel, dan artefak frame
 |----------|--------|
 | **JS/Node/React/Next/Nuxt/Vite/Astro** | `node_modules`, `.next`, `.nuxt`, `.output`, `.vercel`, `.turbo`, `out`, `dist`, `build`, `.parcel-cache`, `.vite`, `coverage`, `.nyc_output`, `.cache` |
 | **Laravel/PHP** | `bootstrap/cache/*.php`, `storage/framework/views/*`, `storage/framework/cache/data/*`, `storage/framework/sessions/*`, `storage/logs/*.log` (+ `vendor/` jika `--vendor`) |
+| **Go** | `bin/`, `vendor/` (jika `--vendor`), `*.out`, `*.test` |
 | **Python** | `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache` |
 | **Umum** | `.DS_Store` |
 
@@ -147,6 +148,7 @@ Apache-2.0 — lihat [LICENSE](./LICENSE)
 
 ## 📜 Changelog
 
+- **v2.4** — support Go (`bin/`, `vendor/`, `*.out`, `*.test`)
 - **v2.3** — `--sort=name|size` + live spinner, single-pass find + prune
 - **v2.2** — live spinner (tampil folder sedang di-scan)
 - **v2.1** — single find + prune `.git`, skip `du` kecuali `--verbose`
