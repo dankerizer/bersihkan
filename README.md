@@ -153,5 +153,4 @@ Apache-2.0 — lihat [LICENSE](./LICENSE)
 - **v2.0** — support Next.js, Laravel, Python, global command + SKILL.md
 
 ---
-Made with ❤️ — https://github.com/dankerizer/bersihkan
-Gist mirror: https://gist.github.com/dankerizer/372c92d3a64586a35dc1d23db5e0188e
+dankedev.com
