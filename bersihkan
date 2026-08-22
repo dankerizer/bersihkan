@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
-# v2.1 - Optimized: single find + prune + du lazy
+# v2.2 - Live spinner: single find + prune + du lazy
 # Usage: bersihkan [PATH] [OPTIONS]
 
 set -e
@@ -115,7 +115,42 @@ done
 FOUND_FILE=$(mktemp /tmp/bersihkan.XXXXXX)
 trap 'rm -f "$FOUND_FILE"' EXIT
 
-echo -e "${DIM}Mencari...${NC}"
+# ---- Live scanning indicator ----
+# Tampilkan spinner + jumlah found selama find jalan (biar gak kelihatan hang)
+SPIN_CHARS='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+spin_pid=""
+
+start_spinner() {
+  local target="$1"
+  local found_file="$2"
+  local i=0
+  # sembunyikan cursor
+  printf "\033[?25l" 2>/dev/null || true
+  while true; do
+    local cnt=$(wc -l < "$found_file" 2>/dev/null | tr -d ' '); cnt=${cnt:-0}
+    local last=$(tail -n 1 "$found_file" 2>/dev/null | sed "s|^$target/||" 2>/dev/null)
+    # potong jika kepanjangan
+    if [[ ${#last} -gt 42 ]]; then last="…${last: -41}"; fi
+    local ch="${SPIN_CHARS:$((i % 10)):1}"
+    if [[ -n "$last" ]]; then
+      printf "\r${DIM}%s Mencari... ${YELLOW}%s found${NC} ${DIM}→ %s${NC}   " "$ch" "$cnt" "$last"
+    else
+      printf "\r${DIM}%s Mencari di %s ... ${YELLOW}%s found${NC}   " "$ch" "$(basename "$target")" "$cnt"
+    fi
+    sleep 0.12
+    i=$((i+1))
+  done
+}
+
+stop_spinner() {
+  if [[ -n "$spin_pid" ]] && kill -0 "$spin_pid" 2>/dev/null; then
+    kill "$spin_pid" 2>/dev/null || true
+    wait "$spin_pid" 2>/dev/null || true
+  fi
+  # clear line + show cursor
+  printf "\r\033[K" 2>/dev/null || printf "\r%60s\r" " "
+  printf "\033[?25h" 2>/dev/null || true
+}
 
 # ---- OPTIMIZED SINGLE FIND ----
 # Prune .git dulu biar tidak masuk ke riwayat git
@@ -127,6 +162,11 @@ echo -e "${DIM}Mencari...${NC}"
 #   -o \( -type d \( DIR_EXPR \) -prune -print \) -> print & prune target dirs
 #   -o \( -type f -name ".DS_Store" -print \) -> file umum
 
+# Jalankan find dengan spinner live (biar kelihatan tidak hang)
+start_spinner "$TARGET" "$FOUND_FILE" &
+spin_pid=$!
+
+# Utama: single find
 # shellcheck disable=SC2086
 eval "find \"$TARGET\" \
   \( -type d -name \".git\" -prune \) -o \
@@ -134,20 +174,19 @@ eval "find \"$TARGET\" \
   \( -type f -name \".DS_Store\" -print \) \
   2>/dev/null" > "$FOUND_FILE" || true
 
-# Laravel cache files (hanya jika ada file Laravel, biar tidak selalu scan)
-# Kita scan terpisah tapi tetap prune .git, dan hanya jika ada struktur Laravel
+# Laravel cache files (hanya jika ada file Laravel)
 if [[ -d "$TARGET/bootstrap" ]] || find "$TARGET" -maxdepth 4 -name "artisan" -type f 2>/dev/null | grep -q .; then
   for pat in "bootstrap/cache/*.php" "storage/framework/views/*" "storage/logs/*.log"; do
     dir_part="$(dirname "$pat")"
     file_pat="$(basename "$pat")"
-    # Cari file dengan -path, tetap prune .git
     find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$dir_part/$file_pat" -print 2>/dev/null >> "$FOUND_FILE" || true
   done
-  # storage/framework/cache & sessions (hanya jika ada)
   for d in "storage/framework/cache/data" "storage/framework/sessions"; do
     find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$d/*" -print 2>/dev/null | head -n 300 >> "$FOUND_FILE" || true
   done
 fi
+
+stop_spinner
 
 # Dedup + sort
 if [[ ! -s "$FOUND_FILE" ]]; then
