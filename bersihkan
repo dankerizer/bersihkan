@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
-# v2.5 - Support exclude + Rust/Java/Flutter/Terraform
+# v2.5.1 - Disclaimer: push ke git dulu sebelum hapus
 # Usage: bersihkan [PATH] [OPTIONS]
 
 set -e
@@ -364,7 +364,11 @@ if $DRY_RUN; then
   exit 0
 fi
 
-if ! $AUTO_YES; then
+if $AUTO_YES; then
+  echo -e "${YELLOW}⚠️  Pastikan sudah git push / backup! Segala risiko kehilangan data bukan tanggung jawab kami.${NC}"
+else
+  echo -e "${RED}⚠️  Pastikan sudah git push / backup sebelum melanjutkan!${NC}"
+  echo -e "${DIM}   Segala risiko kehilangan data bukan tanggung jawab kami.${NC}"
   echo -ne "${YELLOW}Hapus semua di atas? [y/N] ${NC}"
   read -r ans
   case "$ans" in

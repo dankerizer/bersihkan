@@ -134,6 +134,11 @@ rm ~/.local/bin/bersihkan
 sudo rm /usr/local/bin/bersihkan
 ```
 
+## ⚠️ Disclaimer
+
+> **Harap pastikan dan/atau push ke git terlebih dahulu sebelum mengkonfirmasi.**
+> Segala risiko kehilangan data tidak menjadi tanggung jawab kami. Selalu gunakan `--dry-run` untuk memeriksa. Tindakan bersifat permanen (`rm -rf`).
+
 ## Catatan
 
 - Script compatible dengan `bash 3.2` (macOS default) dan `zsh`

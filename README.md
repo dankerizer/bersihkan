@@ -153,6 +153,11 @@ rm ~/.local/bin/bersihkan
 sudo rm /usr/local/bin/bersihkan
 ```
 
+## ⚠️ Disclaimer
+
+> **Harap pastikan dan/atau push ke git terlebih dahulu sebelum mengkonfirmasi penghapusan.**
+> Segala risiko kehilangan data bukan menjadi tanggung jawab kami. Gunakan `--dry-run` untuk memeriksa terlebih dahulu. Tindakan `bersihkan` bersifat permanen (`rm -rf`).
+
 ## 📝 Lisensi
 
 Apache-2.0 — lihat [LICENSE](./LICENSE)
