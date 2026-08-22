@@ -128,10 +128,6 @@ sudo rm /usr/local/bin/bersihkan
 
 Apache-2.0 — lihat [LICENSE](./LICENSE)
 
-## 🙏 Legacy
-
-Script lama tetap tersedia sebagai `bersihkan.sh` untuk backward compatibility. Gunakan `bersihkan` (tanpa ekstensi) untuk versi terbaru.
-
 ---
 Made with ❤️ — https://github.com/dankerizer/bersihkan
 Gist mirror: https://gist.github.com/dankerizer/372c92d3a64586a35dc1d23db5e0188e
