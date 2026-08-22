@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
-# v2.3 - Sort by folder/size + live spinner
+# v2.3.1 - Fix: skip .gitignore/.gitkeep di Laravel storage
 # Usage: bersihkan [PATH] [OPTIONS]
 
 set -e
@@ -189,15 +189,15 @@ eval "find \"$TARGET\" \
   \( -type f -name \".DS_Store\" -print \) \
   2>/dev/null" > "$FOUND_FILE" || true
 
-# Laravel cache files (hanya jika ada file Laravel)
+# Laravel cache files (hanya jika ada file Laravel) - skip .gitignore/.gitkeep
 if [[ -d "$TARGET/bootstrap" ]] || find "$TARGET" -maxdepth 4 -name "artisan" -type f 2>/dev/null | grep -q .; then
   for pat in "bootstrap/cache/*.php" "storage/framework/views/*" "storage/logs/*.log"; do
     dir_part="$(dirname "$pat")"
     file_pat="$(basename "$pat")"
-    find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$dir_part/$file_pat" -print 2>/dev/null >> "$FOUND_FILE" || true
+    find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$dir_part/$file_pat" ! -name ".gitignore" ! -name ".gitkeep" -print 2>/dev/null >> "$FOUND_FILE" || true
   done
   for d in "storage/framework/cache/data" "storage/framework/sessions"; do
-    find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$d/*" -print 2>/dev/null | head -n 300 >> "$FOUND_FILE" || true
+    find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$d/*" ! -name ".gitignore" ! -name ".gitkeep" -print 2>/dev/null | head -n 300 >> "$FOUND_FILE" || true
   done
 fi
 
