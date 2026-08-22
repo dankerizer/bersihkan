@@ -53,13 +53,15 @@ sudo curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/be
 ## Cara Pakai
 
 ```bash
-bersihkan                  # bersihkan folder saat ini (rekursif)
-bersihkan ~/Projects       # bersihkan semua project di folder tersebut
-bersihkan . --dry-run      # preview - hanya tampilkan, tidak menghapus
-bersihkan . --dry-run -v   # preview + ukuran tiap item
-bersihkan -y               # langsung hapus tanpa konfirmasi
-bersihkan --vendor -y      # termasuk hapus vendor/ (Laravel)
-bersihkan --help           # bantuan lengkap
+bersihkan                          # urut nama A-Z (default)
+bersihkan --sort=size              # urut ukuran terbesar dulu
+bersihkan --sort=size --dry-run    # preview urut size
+bersihkan ~/Projects --sort=name   # urut folder A-Z
+bersihkan . --dry-run              # preview - hanya tampilkan, tidak menghapus
+bersihkan . --dry-run -v           # preview + ukuran tiap item
+bersihkan -y                       # langsung hapus tanpa konfirmasi
+bersihkan --vendor -y              # termasuk hapus vendor/ (Laravel)
+bersihkan --help                   # bantuan lengkap
 ```
 
 ## Opsi
@@ -67,8 +69,9 @@ bersihkan --help           # bantuan lengkap
 ```
 PATH              Folder target (default: ".")
 -n, --dry-run     Preview saja
--v, --verbose     Tampilkan ukuran tiap item
+-v, --verbose     Tampilkan ukuran tiap item (lebih lambat)
     --vendor      Juga hapus vendor/
+    --sort <mode> Urutan: name (default, A-Z) | size (terbesar dulu)
 -y, --yes         Skip konfirmasi
 -h, --help        Bantuan
 ```
@@ -124,8 +127,9 @@ sudo rm /usr/local/bin/bersihkan
 ## Catatan
 
 - Script compatible dengan `bash 3.2` (macOS default) dan `zsh`
-- Cari secara rekursif dengan `find` - aman untuk monorepo
-- Ada dedup & hitung ukuran otomatis via `du -shc`
+- Cari secara rekursif dengan `find` + `-prune` (skip `.git` & tidak masuk ke `node_modules`) - aman untuk monorepo
+- Live spinner selama scan + hitung ukuran hanya jika `--verbose`/`--sort=size`
+- `--sort=size` otomatis aktifkan verbose & hitung size (lebih lambat tapi urut akurat)
 - Selalu gunakan `--dry-run` dulu sebelum hapus di project penting
 
 ---

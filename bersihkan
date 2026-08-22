@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
-# v2.2 - Live spinner: single find + prune + du lazy
+# v2.3 - Sort by folder/size + live spinner
 # Usage: bersihkan [PATH] [OPTIONS]
 
 set -e
@@ -17,6 +17,7 @@ DRY_RUN=false
 INCLUDE_VENDOR=false
 VERBOSE=false
 AUTO_YES=false
+SORT="name"  # name | size
 
 usage() {
   cat <<'EOF'
@@ -26,17 +27,19 @@ Usage: bersihkan [PATH] [OPTIONS]
                Scan dilakukan REKURSIF dari PATH tersebut.
 
 OPTIONS:
-  -n, --dry-run    Hanya tampilkan apa yang akan dihapus (tidak menghapus)
-  -v, --verbose    Tampilkan detail + ukuran (lebih lambat)
-      --vendor     Juga hapus vendor/ (PHP/Laravel)
-  -h, --help       Tampilkan bantuan ini
-  -y, --yes        Langsung hapus tanpa konfirmasi
+  -n, --dry-run          Hanya tampilkan apa yang akan dihapus (tidak menghapus)
+  -v, --verbose          Tampilkan detail + ukuran (lebih lambat)
+      --vendor           Juga hapus vendor/ (PHP/Laravel)
+      --sort <mode>      Urutan: name (default, A-Z) | size (terbesar dulu)
+  -h, --help             Tampilkan bantuan ini
+  -y, --yes              Langsung hapus tanpa konfirmasi
 
 Contoh:
-  bersihkan                  # bersihkan folder ini secara rekursif
-  bersihkan ~/Projects       # bersihkan semua project di ~/Projects
-  bersihkan . --dry-run      # cek dulu apa yang akan dihapus
-  bersihkan . --vendor -y    # hapus termasuk vendor/ tanpa tanya
+  bersihkan                          # urut nama (default)
+  bersihkan --sort=size              # urut ukuran terbesar dulu
+  bersihkan --sort=size --dry-run -v # lihat ukuran + urut size
+  bersihkan ~/Projects --sort=name   # urut folder A-Z
+  bersihkan . --vendor -y            # hapus termasuk vendor/
 
 Yang dihapus (rekursif, semua ditemukan akan dihapus):
   JS/Node/React/Next/Nuxt/Astro/Vite:
@@ -59,12 +62,24 @@ while [[ $# -gt 0 ]]; do
     -n|--dry-run) DRY_RUN=true; shift ;;
     -v|--verbose) VERBOSE=true; shift ;;
     --vendor) INCLUDE_VENDOR=true; shift ;;
+    --sort) SORT="$2"; shift 2 ;;
+    --sort=*) SORT="${1#--sort=}"; shift ;;
     -y|--yes) AUTO_YES=true; shift ;;
     --) shift; break ;;
     -*) echo -e "${RED}Unknown option: $1${NC}"; usage; exit 1 ;;
     *) TARGET="$1"; shift ;;
   esac
 done
+
+# Validasi sort
+if [[ "$SORT" != "name" && "$SORT" != "size" ]]; then
+  echo -e "${RED}✗ --sort harus 'name' atau 'size' (dapat: $SORT)${NC}"
+  exit 1
+fi
+# --sort=size otomatis butuh ukuran -> aktifkan verbose
+if [[ "$SORT" == "size" ]]; then
+  VERBOSE=true
+fi
 
 if [[ ! -d "$TARGET" ]]; then
   echo -e "${RED}✗ Folder tidak ditemukan: $TARGET${NC}"
@@ -188,7 +203,7 @@ fi
 
 stop_spinner
 
-# Dedup + sort
+# Dedup
 if [[ ! -s "$FOUND_FILE" ]]; then
   echo -e "${GREEN}✨ Sudah bersih! Tidak ada yang perlu dihapus.${NC}"
   exit 0
@@ -198,44 +213,92 @@ SORTED=$(mktemp /tmp/bersihkan-sorted.XXXXXX)
 sort -u "$FOUND_FILE" > "$SORTED"
 mv "$SORTED" "$FOUND_FILE"
 
+# Sorting sesuai --sort
+if [[ "$SORT" == "size" ]]; then
+  echo -e "${DIM}Mengurutkan berdasarkan ukuran (menghitung size, bisa agak lambat)...${NC}"
+  SIZE_FILE=$(mktemp /tmp/bersihkan-size.XXXXXX)
+  SIZE_SORTED=$(mktemp /tmp/bersihkan-size-sorted.XXXXXX)
+  # Hitung size per item (KB numeric untuk sort)
+  while IFS= read -r p; do
+    sz=$(du -sk "$p" 2>/dev/null | cut -f1)
+    sz=${sz:-0}
+    # Simpan sebagai: size<TAB>human<TAB>path
+    human=$(du -sh "$p" 2>/dev/null | cut -f1)
+    human=${human:-0B}
+    printf "%s\t%s\t%s\n" "$sz" "$human" "$p" >> "$SIZE_FILE"
+  done < "$FOUND_FILE"
+  sort -nr -k1,1 "$SIZE_FILE" > "$SIZE_SORTED"
+  # Tulis ulang FOUND_FILE urut size, dan siapkan file untuk display
+  cut -f3 "$SIZE_SORTED" > "$FOUND_FILE"
+  # Simpan mapping human size untuk display nanti (biar tidak du lagi)
+  SIZE_MAP="$SIZE_SORTED"
+else
+  # Default: sort by name (folder A-Z)
+  SORTED2=$(mktemp /tmp/bersihkan-sorted2.XXXXXX)
+  sort -u "$FOUND_FILE" > "$SORTED2"
+  mv "$SORTED2" "$FOUND_FILE"
+  SIZE_MAP=""
+fi
+
 COUNT=$(wc -l < "$FOUND_FILE" | tr -d ' ')
-echo -e "${YELLOW}Ditemukan $COUNT item:${NC}"
+if [[ "$SORT" == "size" ]]; then
+  echo -e "${YELLOW}Ditemukan $COUNT item (urut: terbesar dulu):${NC}"
+else
+  echo -e "${YELLOW}Ditemukan $COUNT item (urut: nama A-Z):${NC}"
+fi
 echo ""
 
 # Tampilkan daftar
 if $VERBOSE; then
-  # Dengan ukuran - verbose only, karena du bisa SANGAT lambat untuk node_modules besar
-  while IFS= read -r p; do
-    size=$(du -sh "$p" 2>/dev/null | cut -f1 || echo "")
-    if [[ -n "$size" ]]; then
-      printf "  ${DIM}%-8s${NC} %s\n" "$size" "${p#$TARGET/}"
-    else
-      printf "  ${DIM}   ...  ${NC} %s\n" "${p#$TARGET/}"
-    fi
-  done < "$FOUND_FILE"
+  if [[ "$SORT" == "size" && -n "$SIZE_MAP" && -f "$SIZE_MAP" ]]; then
+    # Sudah ada size dari sorting, tinggal tampilkan (hemat du kedua kali)
+    while IFS=$'\t' read -r sz human p; do
+      printf "  ${DIM}%-8s${NC} %s\n" "$human" "${p#$TARGET/}"
+    done < "$SIZE_MAP"
+  else
+    while IFS= read -r p; do
+      size=$(du -sh "$p" 2>/dev/null | cut -f1 || echo "")
+      if [[ -n "$size" ]]; then
+        printf "  ${DIM}%-8s${NC} %s\n" "$size" "${p#$TARGET/}"
+      else
+        printf "  ${DIM}   ...  ${NC} %s\n" "${p#$TARGET/}"
+      fi
+    done < "$FOUND_FILE"
+  fi
 else
   while IFS= read -r p; do
     echo "  • ${p#$TARGET/}"
   done < "$FOUND_FILE"
 fi
 
-# Total size - HANYA jika --verbose, biar tidak lambat di mode normal/dry-run
+# Total size - HANYA jika --verbose
 TOTAL=""
 if $VERBOSE; then
   echo ""
-  if [[ "$COUNT" -gt 50 ]]; then
+  if [[ "$COUNT" -gt 50 && "$SORT" != "size" ]]; then
     echo -e "  ${DIM}($COUNT item - skip hitung total karena terlalu banyak)${NC}"
   else
-    TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
+    if [[ "$SORT" == "size" && -n "${SIZE_FILE:-}" && -f "$SIZE_FILE" ]]; then
+      TOTAL_KB=$(awk -F'\t' '{s+=$1} END {print s}' "$SIZE_FILE" 2>/dev/null || echo "?")
+      if [[ "$TOTAL_KB" != "?" && "$TOTAL_KB" =~ ^[0-9]+$ ]]; then
+        TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "${TOTAL_KB}K")
+      else
+        TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
+      fi
+    else
+      TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
+    fi
     echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}($COUNT item)${NC}"
   fi
 else
   echo ""
   echo -e "  ${DIM}($COUNT item)${NC}"
   if $DRY_RUN; then
-    echo -e "  ${DIM}Tips: pakai -v untuk lihat ukuran${NC}"
+    echo -e "  ${DIM}Tips: pakai -v atau --sort=size untuk lihat ukuran${NC}"
   fi
 fi
+# Cleanup size temp files
+rm -f "${SIZE_FILE:-}" "${SIZE_MAP:-}" 2>/dev/null || true
 echo ""
 
 if $DRY_RUN; then
