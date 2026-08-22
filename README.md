@@ -33,16 +33,34 @@ Hapus `node_modules`, `.next`, `dist`, `build`, cache Laravel, dan artefak frame
 
 ## 🚀 Instalasi
 
-### Opsi 1: One-liner (Recommended)
+### Homebrew (macOS / Linux) — Recommended
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan -o ~/.local/bin/bersihkan && chmod +x ~/.local/bin/bersihkan
+brew tap dankerizer/bersihkan
+brew install bersihkan
 ```
+
+Atau one-liner:
+
+```bash
+brew install dankerizer/bersihkan/bersihkan
+```
+
+> Setelah di-approve di [homebrew-core](https://github.com/Homebrew/homebrew-core/pull/300131), cukup:
+> ```bash
+> brew install bersihkan
+> ```
 
 Verifikasi:
 
 ```bash
 bersihkan --help
+```
+
+### One-liner (tanpa Homebrew)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan -o ~/.local/bin/bersihkan && chmod +x ~/.local/bin/bersihkan
 ```
 
 Jika `command not found`, tambahkan ke PATH:
@@ -53,7 +71,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
-### Opsi 2: Manual
+### Manual
 
 ```bash
 git clone https://github.com/dankerizer/bersihkan.git
@@ -62,7 +80,7 @@ chmod +x bersihkan
 mkdir -p ~/.local/bin && cp bersihkan ~/.local/bin/bersihkan
 ```
 
-### Opsi 3: System-wide (butuh sudo)
+### System-wide (butuh sudo)
 
 ```bash
 sudo curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan -o /usr/local/bin/bersihkan
@@ -148,6 +166,11 @@ Lihat [`SKILL.md`](./SKILL.md) untuk detail trigger & workflow agent.
 ## 🔧 Uninstall
 
 ```bash
+# Homebrew
+brew uninstall bersihkan
+brew untap dankerizer/bersihkan  # jika pakai tap
+
+# Manual
 rm ~/.local/bin/bersihkan
 # atau system-wide:
 sudo rm /usr/local/bin/bersihkan
