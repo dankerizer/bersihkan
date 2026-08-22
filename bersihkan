@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
-# v2.3.1 - Fix: skip .gitignore/.gitkeep di Laravel storage
+# v2.3.2 - Tampilkan total ukuran setelah hapus
 # Usage: bersihkan [PATH] [OPTIONS]
 
 set -e
@@ -271,34 +271,47 @@ else
   done < "$FOUND_FILE"
 fi
 
-# Total size - HANYA jika --verbose
+# Total size - hitung SELALU sebelum hapus (biar bisa tampil setelah hapus)
 TOTAL=""
-if $VERBOSE; then
-  echo ""
-  if [[ "$COUNT" -gt 50 && "$SORT" != "size" ]]; then
-    echo -e "  ${DIM}($COUNT item - skip hitung total karena terlalu banyak)${NC}"
+# Jika --sort=size, kita sudah punya SIZE_FILE dengan KB, bisa pakai itu
+if [[ "$SORT" == "size" && -n "${SIZE_FILE:-}" && -f "$SIZE_FILE" ]]; then
+  TOTAL_KB=$(awk -F'\t' '{s+=$1} END {print s}' "$SIZE_FILE" 2>/dev/null || echo "?")
+  if [[ "$TOTAL_KB" != "?" && "$TOTAL_KB" =~ ^[0-9]+$ ]]; then
+    # Coba du -shc untuk human readable, fallback ke KB
+    TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "${TOTAL_KB}K")
   else
-    if [[ "$SORT" == "size" && -n "${SIZE_FILE:-}" && -f "$SIZE_FILE" ]]; then
-      TOTAL_KB=$(awk -F'\t' '{s+=$1} END {print s}' "$SIZE_FILE" 2>/dev/null || echo "?")
-      if [[ "$TOTAL_KB" != "?" && "$TOTAL_KB" =~ ^[0-9]+$ ]]; then
-        TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "${TOTAL_KB}K")
-      else
-        TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
-      fi
-    else
-      TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
-    fi
+    TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
+  fi
+elif $VERBOSE; then
+  if [[ "$COUNT" -gt 50 ]]; then
+    echo -e "  ${DIM}Menghitung total ukuran...${NC}"
+  fi
+  TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
+else
+  # Non-verbose: tetap hitung tapi tanpa tampil per-item, guard untuk >80 item biar tidak terlalu lambat
+  # Tetap hitung karena user mau lihat setelah hapus, tapi dengan info
+  if [[ "$COUNT" -gt 80 ]]; then
+    echo -e "  ${DIM}Menghitung total ukuran ($COUNT item, bisa agak lambat)...${NC}"
+  fi
+  TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
+fi
+
+# Tampilkan total di list (sebelum konfirmasi)
+if [[ -n "$TOTAL" && "$TOTAL" != "?" ]]; then
+  if $VERBOSE; then
     echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}($COUNT item)${NC}"
+  else
+    echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}($COUNT item)${NC}"
+    if $DRY_RUN; then
+      echo -e "  ${DIM}Tips: pakai -v atau --sort=size untuk lihat ukuran per-item${NC}"
+    fi
   fi
 else
-  echo ""
   echo -e "  ${DIM}($COUNT item)${NC}"
-  if $DRY_RUN; then
-    echo -e "  ${DIM}Tips: pakai -v atau --sort=size untuk lihat ukuran${NC}"
-  fi
 fi
-# Cleanup size temp files
-rm -f "${SIZE_FILE:-}" "${SIZE_MAP:-}" 2>/dev/null || true
+# Cleanup size temp files (jangan hapus TOTAL)
+rm -f "${SIZE_MAP:-}" 2>/dev/null || true
+# SIZE_FILE tetap disimpan sampai selesai untuk total, hapus nanti setelah pakai
 echo ""
 
 if $DRY_RUN; then
@@ -329,11 +342,25 @@ while IFS= read -r p; do
 done < "$FOUND_FILE"
 
 echo ""
+# TOTAL sudah dihitung sebelum hapus, jadi bisa tampilkan ukuran yang dibebaskan
 if [[ -z "$TOTAL" || "$TOTAL" == "?" ]]; then
-  TOTAL="$DELETED item"
-fi
-if [[ $FAILED -eq 0 ]]; then
-  echo -e "${GREEN}✨ Selesai! $DELETED item dibersihkan${NC}"
+  TOTAL_MSG="$DELETED item"
 else
-  echo -e "${YELLOW}Selesai dengan $FAILED gagal, $DELETED berhasil.${NC}"
+  TOTAL_MSG="$TOTAL"
+fi
+# Cleanup SIZE_FILE sekarang (setelah pakai TOTAL)
+rm -f "${SIZE_FILE:-}" 2>/dev/null || true
+
+if [[ $FAILED -eq 0 ]]; then
+  if [[ "$TOTAL_MSG" == "$DELETED item" ]]; then
+    echo -e "${GREEN}✨ Selesai! $DELETED item dibersihkan${NC}"
+  else
+    echo -e "${GREEN}✨ Selesai! $DELETED item dibersihkan ${DIM}($TOTAL_MSG dibebaskan)${NC}"
+  fi
+else
+  if [[ "$TOTAL_MSG" == "$DELETED item" ]]; then
+    echo -e "${YELLOW}Selesai dengan $FAILED gagal, $DELETED berhasil.${NC}"
+  else
+    echo -e "${YELLOW}Selesai dengan $FAILED gagal, $DELETED berhasil ${DIM}($TOTAL_MSG dibebaskan)${NC}"
+  fi
 fi
