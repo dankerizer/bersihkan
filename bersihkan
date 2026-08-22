@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
+# v2.1 - Optimized: single find + prune + du lazy
 # Usage: bersihkan [PATH] [OPTIONS]
-#   PATH default: . (current folder)
-#   Bisa dipanggil dari mana pun, akan scan rekursif dari PATH tersebut.
 
 set -e
 
-# ---- warna ----
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -18,6 +16,7 @@ TARGET="."
 DRY_RUN=false
 INCLUDE_VENDOR=false
 VERBOSE=false
+AUTO_YES=false
 
 usage() {
   cat <<'EOF'
@@ -28,8 +27,8 @@ Usage: bersihkan [PATH] [OPTIONS]
 
 OPTIONS:
   -n, --dry-run    Hanya tampilkan apa yang akan dihapus (tidak menghapus)
-  -v, --verbose    Tampilkan detail
-      --vendor     Juga hapus vendor/ (PHP/Laravel) & pnpm-lock bloat
+  -v, --verbose    Tampilkan detail + ukuran (lebih lambat)
+      --vendor     Juga hapus vendor/ (PHP/Laravel)
   -h, --help       Tampilkan bantuan ini
   -y, --yes        Langsung hapus tanpa konfirmasi
 
@@ -50,12 +49,10 @@ Yang dihapus (rekursif, semua ditemukan akan dihapus):
     storage/logs/*.log   (+ vendor/ jika --vendor)
 
   Python: __pycache__, .pytest_cache, .mypy_cache, .ruff_cache
-  Umum: .DS_Store, *.log
+  Umum: .DS_Store
 EOF
 }
 
-# ---- parse args ----
-AUTO_YES=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -80,9 +77,8 @@ echo -e "${CYAN}🧹 bersihkan${NC} ${DIM}→ $TARGET${NC}"
 if $DRY_RUN; then echo -e "${YELLOW}  [DRY-RUN] tidak ada yang benar-benar dihapus${NC}"; fi
 echo ""
 
-# ---- daftar folder/file yang akan dicari (nama exact untuk -type d / -type f) ----
-# Dipisah: dir_targets dan file_targets
-DIR_TARGETS=(
+# ---- Daftar target ----
+DIR_NAMES=(
   "node_modules"
   ".next"
   ".nuxt"
@@ -102,99 +98,105 @@ DIR_TARGETS=(
   ".mypy_cache"
   ".ruff_cache"
 )
-
-FILE_TARGETS=(
-  ".DS_Store"
-)
-
-# Laravel file targets (hapus isinya, bukan foldernya biar tidak error permission)
-LARAVEL_CACHE_GLOBS=(
-  "bootstrap/cache/*.php"
-  "storage/framework/views/*"
-  "storage/framework/cache/data/*"
-  "storage/framework/sessions/*"
-  "storage/logs/*.log"
-)
-
 if $INCLUDE_VENDOR; then
-  DIR_TARGETS+=("vendor")
+  DIR_NAMES+=("vendor")
 fi
 
-FOUND=()
-TOTAL_SIZE=0
-
-# Helper: cari dengan find, prune biar tidak masuk ke node_modules yang sudah ketemu (lebih cepat)
-find_dirs() {
-  local name="$1"
-  # -prune tidak dipakai di sini karena kita tetap mau hapus semua, tapi kita cari semua level
-  find "$TARGET" -type d -name "$name" -prune -print 2>/dev/null || true
-}
-
-# Kumpulkan direktori
-echo -e "${DIM}Mencari...${NC}"
-for d in "${DIR_TARGETS[@]}"; do
-  while IFS= read -r p; do
-    [[ -n "$p" ]] && FOUND+=("$p")
-  done < <(find "$TARGET" -type d -name "$d" 2>/dev/null)
-done
-
-# Kumpulkan file .DS_Store dll
-for f in "${FILE_TARGETS[@]}"; do
-  while IFS= read -r p; do
-    [[ -n "$p" ]] && FOUND+=("$p")
-  done < <(find "$TARGET" -type f -name "$f" 2>/dev/null)
-done
-
-# Laravel cache files (glob-like)
-for pat in "${LARAVEL_CACHE_GLOBS[@]}"; do
-  # pat seperti "bootstrap/cache/*.php" -> cari file di TARGET/**/bootstrap/cache
-  dir_part="$(dirname "$pat")"
-  file_pat="$(basename "$pat")"
-  while IFS= read -r p; do
-    [[ -n "$p" ]] && FOUND+=("$p")
-  done < <(find "$TARGET" -path "*/$dir_part/$file_pat" -type f 2>/dev/null)
-  # juga handle "data/*" yang nested
-  if [[ "$file_pat" == "*" ]]; then
-    while IFS= read -r p; do
-      [[ -n "$p" ]] && FOUND+=("$p")
-    done < <(find "$TARGET" -path "*/$dir_part/*" -type f 2>/dev/null | head -n 200)
+# Build find expression untuk dirs: \( -name a -o -name b -o ... \)
+DIR_EXPR=""
+for i in "${!DIR_NAMES[@]}"; do
+  if [[ $i -eq 0 ]]; then
+    DIR_EXPR="-name \"${DIR_NAMES[$i]}\""
+  else
+    DIR_EXPR="$DIR_EXPR -o -name \"${DIR_NAMES[$i]}\""
   fi
 done
 
-# Unique + sort
-if [[ ${#FOUND[@]} -eq 0 ]]; then
+FOUND_FILE=$(mktemp /tmp/bersihkan.XXXXXX)
+trap 'rm -f "$FOUND_FILE"' EXIT
+
+echo -e "${DIM}Mencari...${NC}"
+
+# ---- OPTIMIZED SINGLE FIND ----
+# Prune .git dulu biar tidak masuk ke riwayat git
+# -prune = jangan turun ke dalam folder tersebut, -print = cetak yang ketemu
+# Kita pakai satu find untuk semua DIR_NAMES sekaligus (bukan 17x find!)
+#
+# Penjelasan:
+#   \( -type d -name ".git" -prune \)  -> skip .git sepenuhnya
+#   -o \( -type d \( DIR_EXPR \) -prune -print \) -> print & prune target dirs
+#   -o \( -type f -name ".DS_Store" -print \) -> file umum
+
+# shellcheck disable=SC2086
+eval "find \"$TARGET\" \
+  \( -type d -name \".git\" -prune \) -o \
+  \( -type d \( $DIR_EXPR \) -prune -print \) -o \
+  \( -type f -name \".DS_Store\" -print \) \
+  2>/dev/null" > "$FOUND_FILE" || true
+
+# Laravel cache files (hanya jika ada file Laravel, biar tidak selalu scan)
+# Kita scan terpisah tapi tetap prune .git, dan hanya jika ada struktur Laravel
+if [[ -d "$TARGET/bootstrap" ]] || find "$TARGET" -maxdepth 4 -name "artisan" -type f 2>/dev/null | grep -q .; then
+  for pat in "bootstrap/cache/*.php" "storage/framework/views/*" "storage/logs/*.log"; do
+    dir_part="$(dirname "$pat")"
+    file_pat="$(basename "$pat")"
+    # Cari file dengan -path, tetap prune .git
+    find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$dir_part/$file_pat" -print 2>/dev/null >> "$FOUND_FILE" || true
+  done
+  # storage/framework/cache & sessions (hanya jika ada)
+  for d in "storage/framework/cache/data" "storage/framework/sessions"; do
+    find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -path "*/$d/*" -print 2>/dev/null | head -n 300 >> "$FOUND_FILE" || true
+  done
+fi
+
+# Dedup + sort
+if [[ ! -s "$FOUND_FILE" ]]; then
   echo -e "${GREEN}✨ Sudah bersih! Tidak ada yang perlu dihapus.${NC}"
   exit 0
 fi
 
-# Dedup (compatible bash 3.2 macOS)
-DEDUPED=()
-while IFS= read -r line; do
-  [[ -n "$line" ]] && DEDUPED+=("$line")
-done < <(printf "%s\n" "${FOUND[@]}" | sort -u)
-FOUND=("${DEDUPED[@]}")
-unset DEDUPED
+SORTED=$(mktemp /tmp/bersihkan-sorted.XXXXXX)
+sort -u "$FOUND_FILE" > "$SORTED"
+mv "$SORTED" "$FOUND_FILE"
 
-# Hitung ukuran
-echo -e "${YELLOW}Ditemukan ${#FOUND[@]} item:${NC}"
+COUNT=$(wc -l < "$FOUND_FILE" | tr -d ' ')
+echo -e "${YELLOW}Ditemukan $COUNT item:${NC}"
 echo ""
-for p in "${FOUND[@]}"; do
-  if $VERBOSE || $DRY_RUN; then
-    size=$(du -sh "$p" 2>/dev/null | cut -f1)
-    printf "  ${DIM}%-8s${NC} %s\n" "$size" "${p#$TARGET/}"
-    # fallback jika du gagal
-    if [[ -z "$size" ]]; then
-      printf "  %s\n" "${p#$TARGET/}"
+
+# Tampilkan daftar
+if $VERBOSE; then
+  # Dengan ukuran - verbose only, karena du bisa SANGAT lambat untuk node_modules besar
+  while IFS= read -r p; do
+    size=$(du -sh "$p" 2>/dev/null | cut -f1 || echo "")
+    if [[ -n "$size" ]]; then
+      printf "  ${DIM}%-8s${NC} %s\n" "$size" "${p#$TARGET/}"
+    else
+      printf "  ${DIM}   ...  ${NC} %s\n" "${p#$TARGET/}"
     fi
-  else
+  done < "$FOUND_FILE"
+else
+  while IFS= read -r p; do
     echo "  • ${p#$TARGET/}"
-  fi
-done
+  done < "$FOUND_FILE"
+fi
 
-# Total size
-TOTAL=$(du -shc "${FOUND[@]}" 2>/dev/null | tail -1 | cut -f1)
-echo ""
-echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}(${#FOUND[@]} item)${NC}"
+# Total size - HANYA jika --verbose, biar tidak lambat di mode normal/dry-run
+TOTAL=""
+if $VERBOSE; then
+  echo ""
+  if [[ "$COUNT" -gt 50 ]]; then
+    echo -e "  ${DIM}($COUNT item - skip hitung total karena terlalu banyak)${NC}"
+  else
+    TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
+    echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}($COUNT item)${NC}"
+  fi
+else
+  echo ""
+  echo -e "  ${DIM}($COUNT item)${NC}"
+  if $DRY_RUN; then
+    echo -e "  ${DIM}Tips: pakai -v untuk lihat ukuran${NC}"
+  fi
+fi
 echo ""
 
 if $DRY_RUN; then
@@ -214,7 +216,7 @@ fi
 echo ""
 FAILED=0
 DELETED=0
-for p in "${FOUND[@]}"; do
+while IFS= read -r p; do
   if rm -rf "$p" 2>/dev/null; then
     echo -e "${GREEN}  ✓${NC} ${p#$TARGET/}"
     DELETED=$((DELETED+1))
@@ -222,13 +224,14 @@ for p in "${FOUND[@]}"; do
     echo -e "${RED}  ✗ Gagal: ${p}${NC}"
     FAILED=$((FAILED+1))
   fi
-done
+done < "$FOUND_FILE"
 
 echo ""
+if [[ -z "$TOTAL" || "$TOTAL" == "?" ]]; then
+  TOTAL="$DELETED item"
+fi
 if [[ $FAILED -eq 0 ]]; then
-  echo -e "${GREEN}✨ Selesai! $DELETED item dibersihkan ($TOTAL dibebaskan)${NC}"
+  echo -e "${GREEN}✨ Selesai! $DELETED item dibersihkan${NC}"
 else
   echo -e "${YELLOW}Selesai dengan $FAILED gagal, $DELETED berhasil.${NC}"
 fi
-# Bersihkan juga lock file sampah Next/Turbo jika ada
-# (opsional, tidak error jika tidak ada)
