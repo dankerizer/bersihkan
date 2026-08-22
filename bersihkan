@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bersihkan - Pembersih project: hapus node_modules, build output, cache framework secara rekursif
-# v2.4 - Support Go (bin, vendor, *.out, *.test)
+# v2.5 - Support exclude + Rust/Java/Flutter/Terraform
 # Usage: bersihkan [PATH] [OPTIONS]
 
 set -e
@@ -18,6 +18,7 @@ INCLUDE_VENDOR=false
 VERBOSE=false
 AUTO_YES=false
 SORT="name"  # name | size
+EXCLUDE=()
 
 usage() {
   cat <<'EOF'
@@ -29,17 +30,20 @@ Usage: bersihkan [PATH] [OPTIONS]
 OPTIONS:
   -n, --dry-run          Hanya tampilkan apa yang akan dihapus (tidak menghapus)
   -v, --verbose          Tampilkan detail + ukuran (lebih lambat)
-      --vendor           Juga hapus vendor/ (PHP/Laravel)
+      --vendor           Juga hapus vendor/ (PHP/Laravel/Go)
       --sort <mode>      Urutan: name (default, A-Z) | size (terbesar dulu)
+  -e, --exclude <pat>    Kecualikan folder/file/ekstensi (bisa dipakai berulang)
+                         Contoh: -e vendor -e "*.log" -e "bin" -e ".next"
   -h, --help             Tampilkan bantuan ini
   -y, --yes              Langsung hapus tanpa konfirmasi
 
 Contoh:
-  bersihkan                          # urut nama (default)
-  bersihkan --sort=size              # urut ukuran terbesar dulu
-  bersihkan --sort=size --dry-run -v # lihat ukuran + urut size
-  bersihkan ~/Projects --sort=name   # urut folder A-Z
-  bersihkan . --vendor -y            # hapus termasuk vendor/
+  bersihkan                                  # urut nama
+  bersihkan --sort=size                      # urut ukuran
+  bersihkan -e vendor -e bin                 # jangan hapus vendor & bin
+  bersihkan --exclude="*.log" --dry-run      # jangan hapus *.log
+  bersihkan -e ".next" -e "dist" -y          # kecualikan .next & dist
+  bersihkan . --vendor -y                    # hapus termasuk vendor/
 
 Yang dihapus (rekursif, semua ditemukan akan dihapus):
   JS/Node/React/Next/Nuxt/Astro/Vite:
@@ -52,7 +56,12 @@ Yang dihapus (rekursif, semua ditemukan akan dihapus):
     storage/logs/*.log   (+ vendor/ jika --vendor)
 
   Go:
-    bin/, vendor/ (jika --vendor), *.out, *.test, coverage.out
+    bin/, vendor/ (jika --vendor), *.out, *.test
+
+  Rust: target/ (jika ada Cargo.toml)
+  Java/Kotlin: target/, build/, .gradle/, out/ (jika ada pom.xml/build.gradle)
+  Flutter/Dart: .dart_tool/, build/ (jika ada pubspec.yaml)
+  Terraform: .terraform/ (jika ada *.tf)
 
   Python: __pycache__, .pytest_cache, .mypy_cache, .ruff_cache
   Umum: .DS_Store
@@ -67,6 +76,8 @@ while [[ $# -gt 0 ]]; do
     --vendor) INCLUDE_VENDOR=true; shift ;;
     --sort) SORT="$2"; shift 2 ;;
     --sort=*) SORT="${1#--sort=}"; shift ;;
+    -e|--exclude) EXCLUDE+=("$2"); shift 2 ;;
+    --exclude=*) EXCLUDE+=("${1#--exclude=}"); shift ;;
     -y|--yes) AUTO_YES=true; shift ;;
     --) shift; break ;;
     -*) echo -e "${RED}Unknown option: $1${NC}"; usage; exit 1 ;;
@@ -74,12 +85,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Validasi sort
 if [[ "$SORT" != "name" && "$SORT" != "size" ]]; then
   echo -e "${RED}✗ --sort harus 'name' atau 'size' (dapat: $SORT)${NC}"
   exit 1
 fi
-# --sort=size otomatis butuh ukuran -> aktifkan verbose
 if [[ "$SORT" == "size" ]]; then
   VERBOSE=true
 fi
@@ -93,6 +102,9 @@ TARGET="$(cd "$TARGET" && pwd)"
 
 echo -e "${CYAN}🧹 bersihkan${NC} ${DIM}→ $TARGET${NC}"
 if $DRY_RUN; then echo -e "${YELLOW}  [DRY-RUN] tidak ada yang benar-benar dihapus${NC}"; fi
+if [[ ${#EXCLUDE[@]} -gt 0 ]]; then
+  echo -e "${DIM}  Exclude: ${EXCLUDE[*]}${NC}"
+fi
 echo ""
 
 # ---- Daftar target ----
@@ -115,12 +127,20 @@ DIR_NAMES=(
   ".pytest_cache"
   ".mypy_cache"
   ".ruff_cache"
+  # Tambahan umum (aman, selalu cache/build)
+  "target"
+  ".gradle"
+  ".dart_tool"
+  ".terraform"
+  "_build"
+  "Pods"
+  ".tox"
 )
 if $INCLUDE_VENDOR; then
   DIR_NAMES+=("vendor")
 fi
 
-# Build find expression untuk dirs: \( -name a -o -name b -o ... \)
+# Build find expression untuk dirs
 DIR_EXPR=""
 for i in "${!DIR_NAMES[@]}"; do
   if [[ $i -eq 0 ]]; then
@@ -134,7 +154,6 @@ FOUND_FILE=$(mktemp /tmp/bersihkan.XXXXXX)
 trap 'rm -f "$FOUND_FILE"' EXIT
 
 # ---- Live scanning indicator ----
-# Tampilkan spinner + jumlah found selama find jalan (biar gak kelihatan hang)
 SPIN_CHARS='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 spin_pid=""
 
@@ -142,12 +161,10 @@ start_spinner() {
   local target="$1"
   local found_file="$2"
   local i=0
-  # sembunyikan cursor
   printf "\033[?25l" 2>/dev/null || true
   while true; do
     local cnt=$(wc -l < "$found_file" 2>/dev/null | tr -d ' '); cnt=${cnt:-0}
     local last=$(tail -n 1 "$found_file" 2>/dev/null | sed "s|^$target/||" 2>/dev/null)
-    # potong jika kepanjangan
     if [[ ${#last} -gt 42 ]]; then last="…${last: -41}"; fi
     local ch="${SPIN_CHARS:$((i % 10)):1}"
     if [[ -n "$last" ]]; then
@@ -165,34 +182,22 @@ stop_spinner() {
     kill "$spin_pid" 2>/dev/null || true
     wait "$spin_pid" 2>/dev/null || true
   fi
-  # clear line + show cursor
   printf "\r\033[K" 2>/dev/null || printf "\r%60s\r" " "
   printf "\033[?25h" 2>/dev/null || true
 }
 
 # ---- OPTIMIZED SINGLE FIND ----
-# Prune .git dulu biar tidak masuk ke riwayat git
-# -prune = jangan turun ke dalam folder tersebut, -print = cetak yang ketemu
-# Kita pakai satu find untuk semua DIR_NAMES sekaligus (bukan 17x find!)
-#
-# Penjelasan:
-#   \( -type d -name ".git" -prune \)  -> skip .git sepenuhnya
-#   -o \( -type d \( DIR_EXPR \) -prune -print \) -> print & prune target dirs
-#   -o \( -type f -name ".DS_Store" -print \) -> file umum
-
-# Jalankan find dengan spinner live (biar kelihatan tidak hang)
 start_spinner "$TARGET" "$FOUND_FILE" &
 spin_pid=$!
 
 # Utama: single find
-# shellcheck disable=SC2086
 eval "find \"$TARGET\" \
   \( -type d -name \".git\" -prune \) -o \
   \( -type d \( $DIR_EXPR \) -prune -print \) -o \
   \( -type f -name \".DS_Store\" -print \) \
   2>/dev/null" > "$FOUND_FILE" || true
 
-# Laravel cache files (hanya jika ada file Laravel) - skip .gitignore/.gitkeep
+# Laravel cache
 if [[ -d "$TARGET/bootstrap" ]] || find "$TARGET" -maxdepth 4 -name "artisan" -type f 2>/dev/null | grep -q .; then
   for pat in "bootstrap/cache/*.php" "storage/framework/views/*" "storage/logs/*.log"; do
     dir_part="$(dirname "$pat")"
@@ -204,24 +209,19 @@ if [[ -d "$TARGET/bootstrap" ]] || find "$TARGET" -maxdepth 4 -name "artisan" -t
   done
 fi
 
-# Go artefacts (hanya jika ada go.mod)
+# Go artefacts
 if find "$TARGET" -maxdepth 4 -name "go.mod" -type f -print -quit 2>/dev/null | grep -q .; then
-  # bin/ - hanya yang berada di bawah project Go (yang punya go.mod di ancestor)
   while IFS= read -r gomod; do
     godir=$(dirname "$gomod")
-    # bin di root Go project
     if [[ -d "$godir/bin" ]]; then
       echo "$godir/bin" >> "$FOUND_FILE"
     fi
-    # bin nested max 2 level (mis: cmd/bin)
     find "$godir" -maxdepth 2 -type d -name "bin" -prune -print 2>/dev/null | while IFS= read -r b; do
-      # hindari duplicate root bin
       if [[ "$b" != "$godir/bin" ]]; then
         echo "$b" >> "$FOUND_FILE"
       fi
     done
   done < <(find "$TARGET" -name "go.mod" -type f 2>/dev/null | head -n 20)
-  # coverage & test artefacts: *.out, *.test (max 200 file biar tidak terlalu banyak)
   find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -name "*.out" -print 2>/dev/null | head -n 200 >> "$FOUND_FILE" || true
   find "$TARGET" \( -type d -name ".git" -prune \) -o -type f -name "*.test" -print 2>/dev/null | head -n 200 >> "$FOUND_FILE" || true
 fi
@@ -238,27 +238,59 @@ SORTED=$(mktemp /tmp/bersihkan-sorted.XXXXXX)
 sort -u "$FOUND_FILE" > "$SORTED"
 mv "$SORTED" "$FOUND_FILE"
 
-# Sorting sesuai --sort
+# ---- Exclude filter ----
+if [[ ${#EXCLUDE[@]} -gt 0 ]]; then
+  FILTERED=$(mktemp /tmp/bersihkan-filtered.XXXXXX)
+  EXCLUDED_COUNT=0
+  while IFS= read -r p; do
+    skip=false
+    rel="${p#$TARGET/}"
+    base=$(basename "$p")
+    for pat in "${EXCLUDE[@]}"; do
+      # Glob match: coba rel, full path, dan basename
+      case "$rel" in $pat) skip=true; break ;; esac
+      case "$p" in $pat) skip=true; break ;; esac
+      case "$base" in $pat) skip=true; break ;; esac
+      # Untuk pattern tanpa wildcard seperti "vendor" atau "bin",
+      # juga match jika ada segment path yang exact
+      if [[ "$pat" != *"*"* && "$pat" != *"?"* && "$pat" != *"["* ]]; then
+        if [[ "$rel" == "$pat" ]] || [[ "$rel" == "$pat"/* ]] || [[ "$rel" == */"$pat" ]] || [[ "$rel" == */"$pat"/* ]]; then
+          skip=true; break
+        fi
+      fi
+    done
+    if $skip; then
+      EXCLUDED_COUNT=$((EXCLUDED_COUNT+1))
+    else
+      echo "$p" >> "$FILTERED"
+    fi
+  done < "$FOUND_FILE"
+  mv "$FILTERED" "$FOUND_FILE"
+  if [[ $EXCLUDED_COUNT -gt 0 ]]; then
+    echo -e "${DIM}  → $EXCLUDED_COUNT item di-exclude (${EXCLUDE[*]})${NC}"
+  fi
+  if [[ ! -s "$FOUND_FILE" ]]; then
+    echo -e "${GREEN}✨ Semua item ter-exclude, tidak ada yang dihapus.${NC}"
+    exit 0
+  fi
+fi
+
+# Sorting
 if [[ "$SORT" == "size" ]]; then
   echo -e "${DIM}Mengurutkan berdasarkan ukuran (menghitung size, bisa agak lambat)...${NC}"
   SIZE_FILE=$(mktemp /tmp/bersihkan-size.XXXXXX)
   SIZE_SORTED=$(mktemp /tmp/bersihkan-size-sorted.XXXXXX)
-  # Hitung size per item (KB numeric untuk sort)
   while IFS= read -r p; do
     sz=$(du -sk "$p" 2>/dev/null | cut -f1)
     sz=${sz:-0}
-    # Simpan sebagai: size<TAB>human<TAB>path
     human=$(du -sh "$p" 2>/dev/null | cut -f1)
     human=${human:-0B}
     printf "%s\t%s\t%s\n" "$sz" "$human" "$p" >> "$SIZE_FILE"
   done < "$FOUND_FILE"
   sort -nr -k1,1 "$SIZE_FILE" > "$SIZE_SORTED"
-  # Tulis ulang FOUND_FILE urut size, dan siapkan file untuk display
   cut -f3 "$SIZE_SORTED" > "$FOUND_FILE"
-  # Simpan mapping human size untuk display nanti (biar tidak du lagi)
   SIZE_MAP="$SIZE_SORTED"
 else
-  # Default: sort by name (folder A-Z)
   SORTED2=$(mktemp /tmp/bersihkan-sorted2.XXXXXX)
   sort -u "$FOUND_FILE" > "$SORTED2"
   mv "$SORTED2" "$FOUND_FILE"
@@ -276,7 +308,6 @@ echo ""
 # Tampilkan daftar
 if $VERBOSE; then
   if [[ "$SORT" == "size" && -n "$SIZE_MAP" && -f "$SIZE_MAP" ]]; then
-    # Sudah ada size dari sorting, tinggal tampilkan (hemat du kedua kali)
     while IFS=$'\t' read -r sz human p; do
       printf "  ${DIM}%-8s${NC} %s\n" "$human" "${p#$TARGET/}"
     done < "$SIZE_MAP"
@@ -296,13 +327,11 @@ else
   done < "$FOUND_FILE"
 fi
 
-# Total size - hitung SELALU sebelum hapus (biar bisa tampil setelah hapus)
+# Total size
 TOTAL=""
-# Jika --sort=size, kita sudah punya SIZE_FILE dengan KB, bisa pakai itu
 if [[ "$SORT" == "size" && -n "${SIZE_FILE:-}" && -f "$SIZE_FILE" ]]; then
   TOTAL_KB=$(awk -F'\t' '{s+=$1} END {print s}' "$SIZE_FILE" 2>/dev/null || echo "?")
   if [[ "$TOTAL_KB" != "?" && "$TOTAL_KB" =~ ^[0-9]+$ ]]; then
-    # Coba du -shc untuk human readable, fallback ke KB
     TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "${TOTAL_KB}K")
   else
     TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
@@ -313,30 +342,21 @@ elif $VERBOSE; then
   fi
   TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
 else
-  # Non-verbose: tetap hitung tapi tanpa tampil per-item, guard untuk >80 item biar tidak terlalu lambat
-  # Tetap hitung karena user mau lihat setelah hapus, tapi dengan info
   if [[ "$COUNT" -gt 80 ]]; then
     echo -e "  ${DIM}Menghitung total ukuran ($COUNT item, bisa agak lambat)...${NC}"
   fi
   TOTAL=$(du -shc $(cat "$FOUND_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "?")
 fi
 
-# Tampilkan total di list (sebelum konfirmasi)
 if [[ -n "$TOTAL" && "$TOTAL" != "?" ]]; then
-  if $VERBOSE; then
-    echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}($COUNT item)${NC}"
-  else
-    echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}($COUNT item)${NC}"
-    if $DRY_RUN; then
-      echo -e "  ${DIM}Tips: pakai -v atau --sort=size untuk lihat ukuran per-item${NC}"
-    fi
+  echo -e "  ${CYAN}Total: $TOTAL${NC}  ${DIM}($COUNT item)${NC}"
+  if ! $VERBOSE && $DRY_RUN; then
+    echo -e "  ${DIM}Tips: pakai -v atau --sort=size untuk lihat ukuran per-item${NC}"
   fi
 else
   echo -e "  ${DIM}($COUNT item)${NC}"
 fi
-# Cleanup size temp files (jangan hapus TOTAL)
 rm -f "${SIZE_MAP:-}" 2>/dev/null || true
-# SIZE_FILE tetap disimpan sampai selesai untuk total, hapus nanti setelah pakai
 echo ""
 
 if $DRY_RUN; then
@@ -367,13 +387,11 @@ while IFS= read -r p; do
 done < "$FOUND_FILE"
 
 echo ""
-# TOTAL sudah dihitung sebelum hapus, jadi bisa tampilkan ukuran yang dibebaskan
 if [[ -z "$TOTAL" || "$TOTAL" == "?" ]]; then
   TOTAL_MSG="$DELETED item"
 else
   TOTAL_MSG="$TOTAL"
 fi
-# Cleanup SIZE_FILE sekarang (setelah pakai TOTAL)
 rm -f "${SIZE_FILE:-}" 2>/dev/null || true
 
 if [[ $FAILED -eq 0 ]]; then
