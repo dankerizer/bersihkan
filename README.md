@@ -153,4 +153,4 @@ Apache-2.0 — lihat [LICENSE](./LICENSE)
 - **v2.0** — support Next.js, Laravel, Python, global command + SKILL.md
 
 ---
-dankedev.com
+[dankedev.com](https://dankedev.com)
