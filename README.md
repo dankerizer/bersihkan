@@ -2,7 +2,7 @@
 
 Hapus `node_modules`, `.next`, `dist`, `build`, cache Laravel, dan artefak framework lainnya secara **rekursif** — bisa dipanggil dari mana pun.
 
-> Support: **Next.js / React / Nuxt / Vite / Astro / Laravel / Python** dan umum. Aman, ada `--dry-run` + hitung ukuran.
+> Support: **Next.js / React / Nuxt / Vite / Astro / Laravel / Python** dan umum. Aman, ada `--dry-run` + live spinner.
 
 ![disk full](disk-full.png)
 
@@ -10,9 +10,11 @@ Hapus `node_modules`, `.next`, `dist`, `build`, cache Laravel, dan artefak frame
 
 - 🔁 **Rekursif** — scan semua subfolder dari posisi kamu berdiri
 - 👀 **Aman** — konfirmasi sebelum hapus + mode `--dry-run`
-- 📊 **Hitung ukuran** — tampil total yang dibebaskan
+- 🔍 **Live spinner** — tampil folder yang sedang di-scan + jumlah found (tidak kelihatan hang)
+- 📊 **Hitung ukuran** — tampil total yang dibebaskan (hanya jika `--verbose`/`--sort=size`)
+- 📂 **Sort** — `name` (A-Z, cepat) atau `size` (terbesar dulu)
 - 🌍 **Global command** — install sekali, pakai di mana pun
-- ⚡ **Cepat** — pakai `find` native, compatible `bash 3.2` (macOS)
+- ⚡ **Cepat** — `find` single-pass + `-prune` `.git` & `node_modules`, compatible `bash 3.2` (macOS)
 
 ## 📦 Yang Dibersihkan
 
@@ -64,44 +66,59 @@ sudo chmod +x /usr/local/bin/bersihkan
 ## 💻 Cara Pakai
 
 ```bash
-bersihkan                  # bersihkan folder saat ini (rekursif)
-bersihkan ~/Projects       # bersihkan semua project di folder itu
-bersihkan . --dry-run      # cek dulu apa yang akan dihapus (tidak menghapus)
-bersihkan . --dry-run -v   # cek + lihat ukuran tiap item
-bersihkan -y               # langsung hapus tanpa konfirmasi
-bersihkan --vendor -y      # hapus juga vendor/ (Laravel)
-bersihkan --help           # bantuan lengkap
+bersihkan                          # urut nama A-Z (default)
+bersihkan --sort=size              # urut ukuran terbesar dulu
+bersihkan --sort=size --dry-run    # preview urut size
+bersihkan ~/Projects --sort=name   # urut folder A-Z
+bersihkan . --dry-run              # cek dulu (tanpa hapus)
+bersihkan . --dry-run -v           # cek + ukuran tiap item
+bersihkan -y                       # langsung hapus tanpa konfirmasi
+bersihkan --vendor -y              # hapus juga vendor/ (Laravel)
+bersihkan --help                   # bantuan lengkap
 ```
 
 ### Contoh Output
 
+#### Sort by name (default)
 ```
 🧹 bersihkan → /Users/hadie/Projects
-Ditemukan 7 item:
+Ditemukan 3 item (urut: nama A-Z):
 
-  • my-app/node_modules
   • my-app/.next
+  • my-app/node_modules
   • api/dist
-  • laravel-app/storage/framework/views/cache.php
 
-  Total: 1.2G (7 item)
+  (3 item)
+```
 
-Hapus semua di atas? [y/N] y
+#### Sort by size (terbesar dulu)
+```
+🧹 bersihkan → /Users/hadie/Projects
+Mengurutkan berdasarkan ukuran (menghitung size, bisa agak lambat)...
+Ditemukan 3 item (urut: terbesar dulu):
 
-  ✓ my-app/node_modules
-  ✓ my-app/.next
-✨ Selesai! 7 item dibersihkan (1.2G dibebaskan)
+  320M     my-app/node_modules
+   45M     api/dist
+  120K     my-app/.next
+
+  Total: 365M (3 item)
+```
+
+#### Live scanning (saat scan folder besar)
+```
+⠹ Mencari... 12 found → my-app/.next
 ```
 
 ## ⚙️ Opsi
 
 ```
-PATH         Folder target (default: ".")
--n, --dry-run    Hanya tampilkan apa yang akan dihapus
--v, --verbose    Tampilkan detail + ukuran
-    --vendor     Juga hapus vendor/ (PHP/Laravel)
--y, --yes        Langsung hapus tanpa konfirmasi
--h, --help       Bantuan
+PATH              Folder target (default: ".")
+-n, --dry-run     Hanya tampilkan apa yang akan dihapus
+-v, --verbose     Tampilkan detail + ukuran (lebih lambat)
+    --vendor      Juga hapus vendor/ (PHP/Laravel)
+    --sort <mode> Urutan: name (default, A-Z) | size (terbesar dulu)
+-y, --yes         Langsung hapus tanpa konfirmasi
+-h, --help        Bantuan
 ```
 
 ## 🧠 SKILL.md (untuk AI Agent)
@@ -127,6 +144,13 @@ sudo rm /usr/local/bin/bersihkan
 ## 📝 Lisensi
 
 Apache-2.0 — lihat [LICENSE](./LICENSE)
+
+## 📜 Changelog
+
+- **v2.3** — `--sort=name|size` + live spinner, single-pass find + prune
+- **v2.2** — live spinner (tampil folder sedang di-scan)
+- **v2.1** — single find + prune `.git`, skip `du` kecuali `--verbose`
+- **v2.0** — support Next.js, Laravel, Python, global command + SKILL.md
 
 ---
 Made with ❤️ — https://github.com/dankerizer/bersihkan
