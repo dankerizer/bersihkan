@@ -20,7 +20,7 @@ Aktifkan skill ini ketika user:
 ### One-liner (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/main/bersihkan -o ~/.local/bin/bersihkan && chmod +x ~/.local/bin/bersihkan
+curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan -o ~/.local/bin/bersihkan && chmod +x ~/.local/bin/bersihkan
 ```
 
 Verifikasi:
@@ -38,7 +38,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ### System-wide
 
 ```bash
-sudo curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/main/bersihkan -o /usr/local/bin/bersihkan && sudo chmod +x /usr/local/bin/bersihkan
+sudo curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan -o /usr/local/bin/bersihkan && sudo chmod +x /usr/local/bin/bersihkan
 ```
 
 ## Yang Dibersihkan (Rekursif)
@@ -130,4 +130,4 @@ sudo rm /usr/local/bin/bersihkan
 
 ---
 Gist: https://gist.github.com/dankerizer/372c92d3a64586a35dc1d23db5e0188e
-Raw: https://raw.githubusercontent.com/dankerizer/bersihkan/main/bersihkan
+Raw: https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan

@@ -28,7 +28,7 @@ Hapus `node_modules`, `.next`, `dist`, `build`, cache Laravel, dan artefak frame
 ### Opsi 1: One-liner (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/main/bersihkan -o ~/.local/bin/bersihkan && chmod +x ~/.local/bin/bersihkan
+curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan -o ~/.local/bin/bersihkan && chmod +x ~/.local/bin/bersihkan
 ```
 
 Verifikasi:
@@ -57,7 +57,7 @@ mkdir -p ~/.local/bin && cp bersihkan ~/.local/bin/bersihkan
 ### Opsi 3: System-wide (butuh sudo)
 
 ```bash
-sudo curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/main/bersihkan -o /usr/local/bin/bersihkan
+sudo curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/bersihkan -o /usr/local/bin/bersihkan
 sudo chmod +x /usr/local/bin/bersihkan
 ```
 
@@ -111,7 +111,7 @@ Repo ini menyertakan `SKILL.md` agar AI agent (OpenCode, Claude Code, dll) bisa 
 ```bash
 # Install skill untuk agent
 mkdir -p ~/.config/opencode/skills/bersihkan
-curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/main/SKILL.md -o ~/.config/opencode/skills/bersihkan/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/dankerizer/bersihkan/master/SKILL.md -o ~/.config/opencode/skills/bersihkan/SKILL.md
 ```
 
 Lihat [`SKILL.md`](./SKILL.md) untuk detail trigger & workflow agent.
